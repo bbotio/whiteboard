@@ -14,7 +14,7 @@ LABELS = [
     },
     {
         "text": "text",
-        "inserter": "sloth.items.RectItemInserter",
+        "inserter": "easyinserter.EasyRectItemInserter",
         "item": "sloth.items.RectItem",
         "attributes": {
             "type": "rect",
@@ -24,7 +24,7 @@ LABELS = [
     },
     {
         "text": "figure",
-        "inserter": "sloth.items.RectItemInserter",
+        "inserter": "easyinserter.EasyRectItemInserter",
         "item": "sloth.items.RectItem",
         "attributes": {
             "type": "rect",
