@@ -38,8 +38,7 @@ def whiteboard_label(labels):
         return 0, 0, list(zip([0] * 4, [0] * 4))
 
 
-def whiteboard_images(train, img_dir, image_size, batch_size=32,
-                      grayscale=True):
+def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
     """
     Endless iterator over whiteboard images.
 
@@ -48,6 +47,7 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32,
         img_dir: root directory for paths in train dataframe
         image_size: final image size
         batch_size: batch size
+        seed: set to make generator behavior reproducible
 
     Returns:
         iterator of (batch_x, batch_y) pairs where batch_x is
@@ -60,7 +60,9 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32,
                           channel_shift_range=0.2,
                           horizontal_flip=True,
                           vertical_flip=True,
-                          dim_ordering='tf')
+                          dim_ordering='tf',
+                          seed=seed)
+    n_channels = 3
 
     def generator():
         global whiteboard_label_len
@@ -71,17 +73,23 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32,
             if i == 0:
                 if batch_x is not None:
                     yield batch_x, batch_y
-                batch_x = np.zeros((batch_size,) + image_size)
+                batch_x = np.zeros((batch_size,) + image_size + (n_channels,))
                 batch_y = np.zeros((batch_size,) + (whiteboard_label_len,))
             img_path = os.path.join(img_dir, row['path'])
             img = cv2.imread(img_path)
+            if img is None:
+                print("Can't read ", img_path)
+                continue
             is_present, color, labels = whiteboard_label(row['labels'])
             img, labels = random_transform(img, labels, **transform_opts)
-            scale_x = img.shape[0] / image_size[0]
-            scale_y = img.shape[1] / image_size[1]
-            img = cv2.resize(img, image_size)
-            x_labels = labels[:, 0] * scale_x
-            y_labels = labels[:, 1] * scale_y
+            scale_y = image_size[0] / img.shape[0]
+            scale_x = image_size[1] / img.shape[1]
+            img = cv2.resize(img, (image_size[1], image_size[0]))
+            labels = affinity.scale(labels, xfact=scale_x, yfact=scale_y,
+                                    origin=(0, 0))
+            labels = np.asarray(labels)
+            x_labels = labels[:, 0]
+            y_labels = labels[:, 1]
 
             label_vec = np.zeros(whiteboard_label_len, np.float32)
             label_vec[0] = is_present
@@ -115,7 +123,7 @@ def random_transform(image, labels,
         kwargs: see keras.preprocessing.image.ImageDataGenerator
 
     Returns:
-        (transformed_image, transformed_labels)
+        (transformed_image, transformed_labels as MultiPoint)
     """
     if seed:
         np.random.seed(seed)
@@ -206,7 +214,6 @@ def random_transform(image, labels,
             labels = affinity.scale(labels, yfact=-1,
                                     origin=image_center)
 
-    labels = np.asarray(labels)
     # TODO:
     # channel-wise normalization
     # barrel/fisheye

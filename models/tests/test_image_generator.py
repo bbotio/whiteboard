@@ -43,4 +43,4 @@ def test_random_transform():
                        [673.57648317, 189.27244333],
                        [544.23308452, 381.12743459],
                        [70.73339963, 312.7359806]]
-                      ).equals_exact(MultiPoint(rlabels), 5)
+                      ).equals_exact(rlabels, 5)
