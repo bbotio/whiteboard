@@ -6,7 +6,7 @@ from keras.layers import Dense, Convolution2D, MaxPooling2D, Activation
 from keras.layers import Dropout, Flatten, merge
 from keras.objectives import mean_squared_error
 
-from utils import sequential
+from models.utils import sequential
 
 
 def lenet_like_convnet(input_image):
