@@ -1,18 +1,16 @@
-import pytest
-from models import image_generator
+"""Just to ensure generator is working."""
 import ast
 import os
 import numpy as np
 import pandas as pd
-from skimage import img_as_float
-from matplotlib import pyplot as plt
-from keras.preprocessing.image import load_img, img_to_array
+import cv2
 
-%load_ext autoreload
-%autoreload 2
-%matplotlib inline
+from shapely.geometry import MultiPoint
+from models import image_generator
+
 
 def test_random_transform():
+    """Load image and transforms it, then check that labels are OK."""
     # given
     train = pd.read_csv('source/train.csv')
     train['labels'] = train['labels'].map(ast.literal_eval)
@@ -23,29 +21,26 @@ def test_random_transform():
             break
     xn = [int(float(x)) for x in label['xn'].split(';')][:4]
     yn = [int(float(y)) for y in label['yn'].split(';')][:4]
-    labels = np.zeros((4,2))
+    labels = np.zeros((4, 2))
     for i in range(4):
         labels[i, 0] = xn[i]
         labels[i, 1] = yn[i]
-    img = load_img(image_path)
-    img = img_as_float(img)
-    kw = dict(rotation_range=20,
-            height_shift_range=0,
-            width_shift_range=0,
-            shear_range=0.2,
-            fill_mode='constant',
-            cval=0,
-            zoom_range=(1.3, 1.3),
-            channel_shift_range=0,
-            horizontal_flip=False,
-            vertical_flip=False,
-            dim_ordering='tf')
+    img = cv2.imread(image_path)
+    kw = dict(rotation_range=15,
+              height_shift_range=0.2,
+              width_shift_range=0.2,
+              shear_range=0.3,
+              channel_shift_range=0.2,
+              horizontal_flip=True,
+              vertical_flip=True,
+              dim_ordering='tf',
+              seed=1313)
     # when
     rimg, rlabels = image_generator.random_transform(img, labels, **kw)
 
-    # then
-
-plt.imshow(img)
-plt.plot(labels[:, 0], labels[:, 1], 'o')
-plt.imshow(rimg)
-plt.plot(rlabels[:, 0], rlabels[:, 1], 'o')
+    # then just assert transformation isn't changed much
+    assert MultiPoint([[224.91875347, 58.05657097],
+                       [673.57648317, 189.27244333],
+                       [544.23308452, 381.12743459],
+                       [70.73339963, 312.7359806]]
+                      ).equals_exact(MultiPoint(rlabels), 5)
