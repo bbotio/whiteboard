@@ -104,6 +104,8 @@ def whiteboard_loss(y_true, y_pred):
     wc_p = y_pred[:, 1]
     xy_t = y_true[:, 2:]
     xy_p = y_pred[:, 2:]
+    # point_mapping = tf.constant([0, 1, 2, 3, 0, 1, 2, 3])
+    difference = tf.squared_difference(xy_t, xy_p)
     losses = [tf.square(wp_t - wp_p), wp_t * tf.square(wc_t - wc_p),
-              mean_squared_logarithmic_error(xy_t, xy_p)]
+              tf.reduce_sum(difference, 1)]
     return tf.add_n(losses)
