@@ -1,5 +1,4 @@
 """Code to load and transform whiteboard images."""
-import itertools
 import os
 import numpy as np
 import cv2
@@ -69,36 +68,37 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
         global whiteboard_label_len
         batch_x = None
         batch_y = None
-        for ri, row in itertools.cycle(train.iterrows()):
-            i = ri % batch_size
-            if i == 0:
-                if batch_x is not None:
-                    yield batch_x, batch_y
-                batch_x = np.zeros((batch_size,) + image_size + (n_channels,))
-                batch_y = np.zeros((batch_size,) + (whiteboard_label_len,))
-            img_path = os.path.join(img_dir, row['path'])
-            img = cv2.imread(img_path)
-            if img is None:
-                print("Can't read ", img_path)
-                continue
-            is_present, color, labels = whiteboard_label(row['labels'])
-            img, labels = random_transform(img, labels, **transform_opts)
-            scale_y = image_size[0] / img.shape[0]
-            scale_x = image_size[1] / img.shape[1]
-            img = cv2.resize(img, (image_size[1], image_size[0]))
-            labels = affinity.scale(labels, xfact=scale_x, yfact=scale_y,
-                                    origin=(0, 0))
-            labels = np.asarray(labels)
-            x_labels = labels[:, 0]
-            y_labels = labels[:, 1]
+        while True:
+            batch_x = np.zeros((batch_size,) + image_size + (n_channels,))
+            batch_y = np.zeros((batch_size,) + (whiteboard_label_len,))
 
-            label_vec = np.zeros(whiteboard_label_len, np.float32)
-            label_vec[0] = is_present
-            label_vec[1] = color
-            label_vec[2:6] = x_labels
-            label_vec[6:10] = y_labels
-            batch_x[i] = img
-            batch_y[i] = label_vec
+            rows = train.sample(n=batch_size, replace=True, random_state=seed)
+            for i, (_, row) in enumerate(rows.iterrows()):
+                img_path = os.path.join(img_dir, row['path'])
+                img = cv2.imread(img_path)
+                if img is None:
+                    print("Can't read ", img_path)
+                    continue
+                is_present, color, labels = whiteboard_label(row['labels'])
+                img, labels = random_transform(img, labels, **transform_opts)
+                scale_y = image_size[0] / img.shape[0]
+                scale_x = image_size[1] / img.shape[1]
+                img = cv2.resize(img, (image_size[1], image_size[0]))
+                labels = affinity.scale(labels, xfact=scale_x, yfact=scale_y,
+                                        origin=(0, 0))
+                labels = np.asarray(labels)
+                x_labels = labels[:, 0]
+                y_labels = labels[:, 1]
+
+                label_vec = np.zeros(whiteboard_label_len, np.float32)
+                label_vec[0] = is_present
+                label_vec[1] = color
+                label_vec[2:6] = x_labels
+                label_vec[6:10] = y_labels
+                batch_x[i] = img
+                batch_y[i] = label_vec
+            yield batch_x, batch_y
+
     return generator()
 
 
