@@ -4,6 +4,7 @@ import os
 import numpy as np
 import cv2
 
+from functools import cmp_to_key
 from keras.preprocessing.image import transform_matrix_offset_center
 from keras.preprocessing.image import random_channel_shift
 from keras.preprocessing.image import flip_axis
@@ -217,7 +218,7 @@ def random_transform(image, labels,
     # TODO:
     # channel-wise normalization
     # barrel/fisheye
-    return image, labels
+    return image, order_points_cw(labels)
 
 
 def transform_labels(labels, image_shape, matrix):
@@ -265,3 +266,23 @@ def transform_labels(labels, image_shape, matrix):
     transformed_corners[:, 1] -= min_xy[1]
     labels = affinity.translate(labels, xoff=-min_xy[0], yoff=-min_xy[1])
     return labels, np.asarray(corners), transformed_corners
+
+
+def order_points_cw(points):
+    """
+    Sort points clockwise starting from one closest to (0, 0).
+
+    Args:
+        points: MultiPoint
+
+    Returns:
+        sorted points
+    """
+    start = min(points, key=lambda p: p.x * p.x + p.y * p.y)
+
+    def cmp(a, b):
+        return (a.x - start.x) * (b.y - start.y
+                                  ) - (b.x - start.x) * (a.y - start.y)
+
+    return MultiPoint(sorted([start] + [p for p in points if p != start],
+                      key=cmp_to_key(cmp), reverse=True))

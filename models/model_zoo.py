@@ -4,7 +4,7 @@ import tensorflow as tf
 from keras.models import Model
 from keras.layers import Dense, Convolution2D, MaxPooling2D, Activation
 from keras.layers import Dropout, Flatten, merge
-from keras.objectives import mean_squared_error
+from keras.objectives import mean_squared_logarithmic_error
 
 from models.utils import sequential
 
@@ -105,5 +105,5 @@ def whiteboard_loss(y_true, y_pred):
     xy_t = y_true[:, 2:]
     xy_p = y_pred[:, 2:]
     losses = [tf.square(wp_t - wp_p), wp_t * tf.square(wc_t - wc_p),
-              tf.sigmoid(mean_squared_error(xy_t, xy_p))]
+              mean_squared_logarithmic_error(xy_t, xy_p)]
     return tf.add_n(losses)
