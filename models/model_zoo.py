@@ -4,12 +4,13 @@ import tensorflow as tf
 from keras.models import Model
 from keras.layers import Dense, Convolution2D, MaxPooling2D, Activation
 from keras.layers import Dropout, Flatten, merge
-from keras.objectives import mean_squared_logarithmic_error
+from keras.layers.normalization import BatchNormalization
+from keras.preprocessing.image import ImageDataGenerator
 
 from models.utils import sequential
 
 
-def lenet_like_convnet(input_image):
+def lenet_like_convnet(input_image, dropout=0.25):
     """
     Create simple image convnet based on old lenet.
 
@@ -36,12 +37,15 @@ def lenet_like_convnet(input_image):
     return sequential(input_image,
                       Convolution2D(nb_filters, kernel_size[0], kernel_size[1],
                                     border_mode='valid'),
+                      BatchNormalization(),
                       Activation('relu'),
                       Convolution2D(nb_filters, kernel_size[0],
                                     kernel_size[1]),
+                      BatchNormalization(),
                       Activation('relu'),
                       MaxPooling2D(pool_size=pool_size),
-                      Dropout(0.25),
+                      BatchNormalization(),
+                      Dropout(dropout),
                       Flatten(),
                       Dense(dense_size))
 
@@ -71,13 +75,19 @@ def whiteboard_detector(input_image, convnet):
         whiteboard detector model
     """
     noisy_model = Dropout(0.5)(convnet)
-
+    noisy_model = BatchNormalization()(noisy_model)
+    noisy_model = Dense(64)(noisy_model)
+    noisy_model = BatchNormalization()(noisy_model)
+    noisy_model = Dropout(0.5)(noisy_model)
+    noisy_model = Dense(32)(noisy_model)
+    noisy_model = BatchNormalization()(noisy_model)
+    noisy_model = Dense(16)(noisy_model)
     whiteboard_present = Dense(1, activation='sigmoid',
                                name='whiteboard_present')(noisy_model)
     whiteboard_color = Dense(1, activation='sigmoid',
                              name='whiteboard_color')(noisy_model)
-    xs = Dense(4)(noisy_model)
-    ys = Dense(4)(noisy_model)
+    xs = Dense(4, activation='sigmoid')(noisy_model)
+    ys = Dense(4, activation='sigmoid')(noisy_model)
 
     # Need to merge present bit and coords into single vector
     # to use custom loss function on it
@@ -95,7 +105,7 @@ def whiteboard_loss(y_true, y_pred):
         [whiteboard_present whiteboard_color x1 x2 x3 x4 y1 y2 y3 y4]
 
     Args:
-        y_true: from training labels (given)
+        y_true: from training labels (given) normalized to image size
         y_pred: algorithm prediction
     """
     wp_t = y_true[:, 0]
@@ -104,8 +114,10 @@ def whiteboard_loss(y_true, y_pred):
     wc_p = y_pred[:, 1]
     xy_t = y_true[:, 2:]
     xy_p = y_pred[:, 2:]
-    # point_mapping = tf.constant([0, 1, 2, 3, 0, 1, 2, 3])
     difference = tf.squared_difference(xy_t, xy_p)
-    losses = [tf.square(wp_t - wp_p), wp_t * tf.square(wc_t - wc_p),
+    losses = [tf.nn.sigmoid_cross_entropy_with_logits(labels=wp_t,
+                                                      logits=wp_p),
+              wp_t * tf.nn.sigmoid_cross_entropy_with_logits(labels=wc_t,
+                                                             logits=wc_p),
               tf.reduce_sum(difference, 1)]
     return tf.add_n(losses)

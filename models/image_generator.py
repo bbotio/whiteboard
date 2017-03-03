@@ -5,7 +5,7 @@ import cv2
 
 from functools import cmp_to_key
 from keras.preprocessing.image import transform_matrix_offset_center
-from keras.preprocessing.image import random_channel_shift
+from keras.preprocessing.image import random_channel_shift, ImageDataGenerator
 from keras.preprocessing.image import flip_axis
 from shapely.geometry import MultiPoint
 from shapely import affinity
@@ -62,7 +62,7 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
                           vertical_flip=True,
                           dim_ordering='tf',
                           seed=seed)
-    n_channels = 3
+    n_channels = 4
 
     def generator():
         global whiteboard_label_len
@@ -95,6 +95,8 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
                 label_vec[1] = color
                 label_vec[2:6] = x_labels
                 label_vec[6:10] = y_labels
+                cv2.normalize(img, img, 0, 1, norm_type=cv2.NORM_MINMAX,
+                              dtype=cv2.CV_32F)
                 batch_x[i] = img
                 batch_y[i] = label_vec
             yield batch_x, batch_y
@@ -193,11 +195,16 @@ def random_transform(image, labels,
                                                     transform_matrix)
 
     image = img_as_float(image)
+    # alpha channel is added to aid training algorithm ignore artifical
+    # border region introduced when image is rotated.
+    image = np.dstack([image, np.ones(image.shape[:2])])
+
     perspective_transform = cv2.getPerspectiveTransform(np.float32(corners),
                                                         np.float32(new_corners)
                                                         )
     new_size = tuple(map(int, new_corners.ptp(0)))
-    image = cv2.warpPerspective(image, perspective_transform, new_size)
+    image = cv2.warpPerspective(image, perspective_transform, new_size,
+                                borderValue=(0, 0, 0, 0))
     image_center = (new_size[0] / 2, new_size[1] / 2)
 
     if channel_shift_range != 0:
