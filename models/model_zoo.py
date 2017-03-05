@@ -1,11 +1,12 @@
 """Definitions of neural net models."""
+import os
 import tensorflow as tf
 
-from keras.models import Model
+from collections import namedtuple
+from keras.models import Model, Sequential
 from keras.layers import Dense, Convolution2D, MaxPooling2D, Activation
 from keras.layers import Dropout, Flatten, merge
 from keras.layers.normalization import BatchNormalization
-from keras.preprocessing.image import ImageDataGenerator
 
 from models.utils import sequential
 
@@ -48,6 +49,105 @@ def lenet_like_convnet(input_image, dropout=0.25):
                       Dropout(dropout),
                       Flatten(),
                       Dense(dense_size))
+
+
+def psin(x):
+    """Compute b * sin(a * x) activation."""
+    alpha = tf.constant(1.0)
+    beta = tf.constant(1.0)
+    return beta * tf.sin(alpha * x)
+
+
+def pcos(x):
+    """Compute b * cos(a * x) activation."""
+    alpha = tf.constant(1.0)
+    beta = tf.constant(1.0)
+    return beta * tf.cos(alpha * x)
+
+
+ModelInfo = namedtuple('ModelInfo', ['model', 'height', 'width', 'patch_size',
+                                     'out_size', 'model_weights'])
+
+
+def baseline_whiteboard_detector():
+    """Variant of whiteboard detector trained on 50 epochs."""
+    model_weights = 'models/weights/corner_detector_baseline.hf5'
+    input_height = 200
+    input_width = 150
+    nb_filters = 32
+    patch_size = 5
+    agg_size = 6
+    dropout_pb = 0.5
+    nb_cv_features = 5
+    out_size = (input_width // patch_size, input_height // patch_size)
+
+    model = Sequential()
+    model.add(BatchNormalization(input_shape=(input_height, input_width,
+                                              nb_cv_features),
+                                 name='input_norm'))
+    model.add(Convolution2D(nb_filters, patch_size, patch_size,
+                            subsample=(patch_size, patch_size),
+                            name='patch_conv', activation=psin))
+    model.add(Dropout(dropout_pb))
+    model.add(BatchNormalization(name='hidden_norm'))
+    model.add(Convolution2D(nb_filters, agg_size, agg_size, subsample=(1, 1),
+                            name='aggregated_conv', border_mode='same',
+                            activation=pcos))
+    model.add(Dropout(dropout_pb))
+    model.add(BatchNormalization(name='patch_norm'))
+    # probability of corner for each patch using aggregated feature maps
+    model.add(Convolution2D(1, 1, 1, subsample=(1, 1), activation='sigmoid',
+                            name='sigmoid_conv'))
+
+    if os.path.exists(model_weights):
+        model.load_weights(model_weights, by_name=True)
+
+    model.compile(optimizer='rmsprop', loss='binary_crossentropy')
+    return ModelInfo(model=model, height=input_height, width=input_width,
+                     patch_size=patch_size, out_size=out_size,
+                     model_weights=model_weights)
+
+
+def wide_whiteboard_detector():
+    """Variant of whiteboard detector trained for 500 epochs."""
+    model_weights = 'models/weights/corner_detector_2.hf5'
+    input_height = 150
+    input_width = 150
+    nb_filters = 48
+    patch_size = 5
+    agg_size = 6
+    dropout_pb = 0.5
+    nb_cv_features = 5
+    out_size = (input_width // patch_size, input_height // patch_size)
+
+    model = Sequential()
+    model.add(BatchNormalization(input_shape=(input_height, input_width,
+                                              nb_cv_features),
+                                 name='input_norm'))
+    model.add(Convolution2D(nb_filters, patch_size, patch_size,
+                            subsample=(patch_size, patch_size),
+                            name='patch_conv',
+                            activation=psin,
+                            init='glorot_uniform'))
+    model.add(Dropout(dropout_pb))
+    model.add(BatchNormalization(name='hidden_norm'))
+    model.add(Convolution2D(nb_filters, agg_size, agg_size, subsample=(1, 1),
+                            name='aggregated_conv', border_mode='same',
+                            activation=pcos,
+                            init='glorot_uniform'))
+    model.add(Dropout(dropout_pb))
+    model.add(BatchNormalization(name='patch_norm'))
+    # compute probability of corner for each patch
+    # using aggregated feature maps.
+    model.add(Convolution2D(1, 1, 1, subsample=(1, 1), activation='sigmoid',
+                            name='sigmoid_conv'))
+    if os.path.exists(model_weights):
+        model.load_weights(model_weights, by_name=True)
+
+    model.compile(optimizer='adam', loss='binary_crossentropy')
+    return ModelInfo(model=model, height=input_height, width=input_width,
+                     patch_size=patch_size, out_size=out_size,
+                     model_weights=model_weights)
 
 
 def whiteboard_detector(input_image, convnet):
