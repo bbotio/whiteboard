@@ -4,7 +4,8 @@ import tensorflow as tf
 
 from collections import namedtuple
 from keras.models import Model, Sequential
-from keras.layers import Dense, Convolution2D, MaxPooling2D, Activation
+from keras.layers import Dense, Convolution2D, MaxPooling2D, Activation, Input
+from keras.layers.advanced_activations import LeakyReLU
 from keras.layers import Dropout, Flatten, merge
 from keras.layers.normalization import BatchNormalization
 
@@ -141,6 +142,135 @@ def wide_whiteboard_detector():
     # using aggregated feature maps.
     model.add(Convolution2D(1, 1, 1, subsample=(1, 1), activation='sigmoid',
                             name='sigmoid_conv'))
+    if os.path.exists(model_weights):
+        model.load_weights(model_weights, by_name=True)
+
+    model.compile(optimizer='adam', loss='binary_crossentropy')
+    return ModelInfo(model=model, height=input_height, width=input_width,
+                     patch_size=patch_size, out_size=out_size,
+                     model_weights=model_weights)
+
+
+def residual_block(identifier, input_layer, dropout_pb, nb_filters, agg_size):
+    """Construct single residual block of two convolutional layers."""
+    norm_id = 'norm_' + identifier
+    normalized_input = BatchNormalization(name=norm_id)(input_layer)
+    dropout_id = 'dropout_a_' + identifier
+    dropout_a = Dropout(dropout_pb, name=dropout_id)(normalized_input)
+    agg_conv_a = Convolution2D(nb_filters, agg_size, agg_size,
+                               subsample=(1, 1),
+                               name='agg_conv_a_' + identifier,
+                               border_mode='same',
+                               activation=LeakyReLU())(dropout_a)
+    agg_conv_a_norm = 'agg_conv_a_{}_norm'.format(identifier)
+    a_norm = BatchNormalization(name=agg_conv_a_norm)(agg_conv_a)
+    dropout_b = Dropout(dropout_pb, name='dropout_b_' + identifier)(a_norm)
+    agg_conv_b = Convolution2D(nb_filters, agg_size, agg_size,
+                               subsample=(1, 1),
+                               name='agg_conv_b_' + identifier,
+                               border_mode='same')(dropout_b)
+
+    residual_function = merge([agg_conv_b, normalized_input], mode='sum',
+                              name='residual_function_' + identifier)
+
+    residual_id = 'residual_nonlinearity_' + identifier
+    residual_nonlinearity = Activation(LeakyReLU(),
+                                       name=residual_id)(residual_function)
+
+    return residual_nonlinearity
+
+
+def residual_detector_4_blocks():
+    """Variant of whiteboard detector with residual connections."""
+    model_weights = "models/weights/residual_corner_detector_4_blocks.hf5"
+    input_height = 150
+    input_width = 150
+    nb_filters = 16
+    patch_size = 5
+    agg_size = 6
+    dropout_pb = 0.5
+    nb_cv_features = 5
+    out_size = (input_width // patch_size, input_height // patch_size)
+
+    input_layer = Input(shape=(input_height, input_width, nb_cv_features),
+                        name='input_layer')
+    input_norm = BatchNormalization(name='input_norm')(input_layer)
+    downsample_conv = Convolution2D(nb_filters, patch_size, patch_size,
+                                    subsample=(patch_size, patch_size),
+                                    name='downsample_conv',
+                                    activation=LeakyReLU())(input_norm)
+    block_1 = residual_block('1', downsample_conv, dropout_pb, nb_filters,
+                             agg_size)
+
+    block_2 = residual_block('2', block_1, dropout_pb, nb_filters, agg_size)
+
+    block_3 = residual_block('3', block_2, dropout_pb, nb_filters, agg_size)
+
+    block_4 = residual_block('4', block_3, dropout_pb, nb_filters, agg_size)
+
+    final_batch_norm = BatchNormalization(name='patch_norm')(block_4)
+    final_dropout = Dropout(dropout_pb)(final_batch_norm)
+
+    # compute probability of corner for
+    # each patch using aggregated feature maps.
+    output_layer = Convolution2D(1, 1, 1, subsample=(1, 1),
+                                 activation='sigmoid',
+                                 name='sigmoid_conv')(final_dropout)
+
+    model = Model(input=input_layer, output=output_layer)
+
+    if os.path.exists(model_weights):
+        model.load_weights(model_weights, by_name=True)
+
+    model.compile(optimizer='adam', loss='binary_crossentropy')
+    return ModelInfo(model=model, height=input_height, width=input_width,
+                     patch_size=patch_size, out_size=out_size,
+                     model_weights=model_weights)
+
+
+def residual_detector_6_blocks():
+    """Variant of whiteboard detector with residual connections."""
+    model_weights = "models/weights/residual_corner_detector_6_blocks.hf5"
+    input_height = 150
+    input_width = 150
+    nb_filters = 16
+    patch_size = 5
+    agg_size = 6
+    dropout_pb = 0.5
+    nb_cv_features = 5
+    out_size = (input_width // patch_size, input_height // patch_size)
+
+    input_layer = Input(shape=(input_height, input_width, nb_cv_features),
+                        name='input_layer')
+    input_norm = BatchNormalization(name='input_norm')(input_layer)
+    downsample_conv = Convolution2D(nb_filters, patch_size, patch_size,
+                                    subsample=(patch_size, patch_size),
+                                    name='downsample_conv',
+                                    activation=LeakyReLU())(input_norm)
+    block_1 = residual_block('1', downsample_conv, dropout_pb, nb_filters,
+                             agg_size)
+
+    block_2 = residual_block('2', block_1, dropout_pb, nb_filters, agg_size)
+
+    block_3 = residual_block('3', block_2, dropout_pb, nb_filters, agg_size)
+
+    block_4 = residual_block('4', block_3, dropout_pb, nb_filters, agg_size)
+
+    block_5 = residual_block('5', block_4, dropout_pb, nb_filters, agg_size)
+
+    block_6 = residual_block('6', block_5, dropout_pb, nb_filters, agg_size)
+
+    final_batch_norm = BatchNormalization(name='patch_norm')(block_6)
+    final_dropout = Dropout(dropout_pb)(final_batch_norm)
+
+    # compute probability of corner for
+    # each patch using aggregated feature maps.
+    output_layer = Convolution2D(1, 1, 1, subsample=(1, 1),
+                                 activation='sigmoid',
+                                 name='sigmoid_conv')(final_dropout)
+
+    model = Model(input=input_layer, output=output_layer)
+
     if os.path.exists(model_weights):
         model.load_weights(model_weights, by_name=True)
 
