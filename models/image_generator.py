@@ -37,8 +37,8 @@ def whiteboard_label(labels):
                     list(zip(xn, yn)))
         return 0, 0, list(zip([0] * 4, [0] * 4))
 
-
-def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
+def whiteboard_images(train, img_dir, image_size,
+                      line_thickness=3, batch_size=32, seed=None):
     """
     Endless iterator over whiteboard images.
 
@@ -57,6 +57,7 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
                           height_shift_range=0.2,
                           width_shift_range=0.2,
                           shear_range=0.3,
+                          zoom_range=(0.3, 0.3),
                           channel_shift_range=0.2,
                           horizontal_flip=True,
                           vertical_flip=True,
@@ -70,7 +71,7 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
         batch_y = None
         while True:
             batch_x = np.zeros((batch_size,) + image_size + (n_channels,))
-            batch_y = np.zeros((batch_size,) + (whiteboard_label_len,))
+            batch_y = np.zeros((batch_size,) + image_size)
 
             rows = train.sample(n=batch_size, replace=True, random_state=seed)
             for i, (_, row) in enumerate(rows.iterrows()):
@@ -81,27 +82,62 @@ def whiteboard_images(train, img_dir, image_size, batch_size=32, seed=None):
                     continue
                 is_present, color, labels = whiteboard_label(row['labels'])
                 img, labels = random_transform(img, labels, **transform_opts)
+                labels = draw_poly(img.shape, labels, line_thickness,
+                                   is_present)
+
+                img, labels = random_crop(img, labels, image_size)
                 scale_y = image_size[0] / img.shape[0]
                 scale_x = image_size[1] / img.shape[1]
                 img = cv2.resize(img, (image_size[1], image_size[0]))
-                labels = affinity.scale(labels, xfact=scale_x, yfact=scale_y,
-                                        origin=(0, 0))
-                labels = np.asarray(labels)
-                x_labels = labels[:, 0]
-                y_labels = labels[:, 1]
+                labels = cv2.resize(labels, (image_size[1], image_size[0]))
 
-                label_vec = np.zeros(whiteboard_label_len, np.float32)
-                label_vec[0] = is_present
-                label_vec[1] = color
-                label_vec[2:6] = x_labels
-                label_vec[6:10] = y_labels
                 cv2.normalize(img, img, 0, 1, norm_type=cv2.NORM_MINMAX,
                               dtype=cv2.CV_32F)
-                batch_x[i] = img
-                batch_y[i] = label_vec
+                batch_x[i] = stretch_n(img)
+                batch_y[i] = labels
             yield batch_x, batch_y
 
     return generator()
+
+
+def draw_poly(shape, labels, line_thickness, is_present):
+    """Draw convex polygon using labels as vertexes."""
+    img = np.zeros(shape[:-1:])
+    labels = np.asarray(labels, dtype=np.int32)
+    if is_present:
+        for a, b in [(0, 1), (1, 2), (2, 3), (3, 0)]:
+            cv2.line(img, tuple(labels[a]),
+                     tuple(labels[b]), 1, line_thickness)
+    return img
+
+
+def random_crop(img, labels, image_size):
+    if img.shape[0] > image_size[0] and img.shape[1] > image_size[1]:
+        dx, dy = img.shape[0] - image_size[0], img.shape[1] - image_size[1]
+    else:
+        dx, dy = img.shape[0] / 2, img.shape[1] / 2
+    x = np.random.randint(0, dx)
+    y = np.random.randint(0, dy)
+    return (img[x:(x + image_size[0]), y:(y + image_size[1])].copy(),
+            labels[x:(x + image_size[0]), y:(y + image_size[1])].copy())
+
+
+def stretch_n(bands, lower_percent=0, higher_percent=100):
+    """Preprocess image."""
+    out = np.zeros_like(bands, dtype=np.float32)
+    n = bands.shape[2]
+    for i in range(n - 1):
+        a = 0  # np.min(band)
+        b = 1  # np.max(band)
+        c = np.percentile(bands[:, :, i], lower_percent)
+        d = np.percentile(bands[:, :, i], higher_percent)
+        t = a + (bands[:, :, i] - c) * (b - a) / (d - c)
+        t[t < a] = a
+        t[t > b] = b
+        out[:, :, i] = t
+
+    out[:, :, n - 1] = bands[:, :, n - 1]
+    return out.astype(np.float32)
 
 
 def random_transform(image, labels,

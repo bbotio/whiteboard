@@ -1,0 +1,9 @@
+[Unit]
+Description=Lenet like CNN training
+After=network.target
+
+[Service]
+ExecStart=/media/stuff/ml-shad/whiteboard/auto_train.py
+
+[Install]
+WantedBy=multi-user.target
