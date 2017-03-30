@@ -71,7 +71,7 @@ def whiteboard_images(train, img_dir, image_size,
         batch_y = None
         while True:
             batch_x = np.zeros((batch_size,) + image_size + (n_channels,))
-            batch_y = np.zeros((batch_size,) + image_size)
+            batch_y = np.zeros((batch_size,) + image_size + (1,))
 
             rows = train.sample(n=batch_size, replace=True, random_state=seed)
             for i, (_, row) in enumerate(rows.iterrows()):
@@ -93,8 +93,10 @@ def whiteboard_images(train, img_dir, image_size,
 
                 cv2.normalize(img, img, 0, 1, norm_type=cv2.NORM_MINMAX,
                               dtype=cv2.CV_32F)
+                cv2.normalize(labels, labels, 0, 1, norm_type=cv2.NORM_MINMAX,
+                              dtype=cv2.CV_32F)
                 batch_x[i] = stretch_n(img)
-                batch_y[i] = labels
+                batch_y[i] = labels[:, :, None]
             yield batch_x, batch_y
 
     return generator()

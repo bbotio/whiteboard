@@ -4,9 +4,10 @@ import tensorflow as tf
 
 from collections import namedtuple
 from keras.models import Model, Sequential
-from keras.layers import Dense, Convolution2D, MaxPooling2D, Activation, Input
+from keras.layers import Dense, Conv2D, MaxPooling2D, Activation, Input
 from keras.layers.advanced_activations import LeakyReLU
-from keras.layers import Dropout, Flatten, merge
+from keras.layers import Dropout, Flatten
+from keras.layers.merge import add, concatenate
 from keras.layers.normalization import BatchNormalization
 
 from models.utils import sequential
@@ -37,12 +38,12 @@ def lenet_like_convnet(input_image, dropout=0.25):
 
     # Found no way to use models.Sequential with Input tensor
     return sequential(input_image,
-                      Convolution2D(nb_filters, kernel_size[0], kernel_size[1],
-                                    border_mode='valid'),
+                      Conv2D(nb_filters, kernel_size,
+                             strides=(1, 1),
+                             padding='valid'),
                       BatchNormalization(),
                       Activation('relu'),
-                      Convolution2D(nb_filters, kernel_size[0],
-                                    kernel_size[1]),
+                      Conv2D(nb_filters, kernel_size),
                       BatchNormalization(),
                       Activation('relu'),
                       MaxPooling2D(pool_size=pool_size),
@@ -86,19 +87,19 @@ def baseline_whiteboard_detector():
     model.add(BatchNormalization(input_shape=(input_height, input_width,
                                               nb_cv_features),
                                  name='input_norm'))
-    model.add(Convolution2D(nb_filters, patch_size, patch_size,
-                            subsample=(patch_size, patch_size),
-                            name='patch_conv', activation=psin))
+    model.add(Conv2D(nb_filters, (patch_size, patch_size),
+                     strides=(patch_size, patch_size),
+                     name='patch_conv', activation=psin))
     model.add(Dropout(dropout_pb))
     model.add(BatchNormalization(name='hidden_norm'))
-    model.add(Convolution2D(nb_filters, agg_size, agg_size, subsample=(1, 1),
-                            name='aggregated_conv', border_mode='same',
-                            activation=pcos))
+    model.add(Conv2D(nb_filters, (agg_size, agg_size), strides=(1, 1),
+                     name='aggregated_conv', padding='same',
+                     activation=pcos))
     model.add(Dropout(dropout_pb))
     model.add(BatchNormalization(name='patch_norm'))
     # probability of corner for each patch using aggregated feature maps
-    model.add(Convolution2D(1, 1, 1, subsample=(1, 1), activation='sigmoid',
-                            name='sigmoid_conv'))
+    model.add(Conv2D(1, (1, 1), strides=(1, 1), activation='sigmoid',
+                     name='sigmoid_conv'))
 
     if os.path.exists(model_weights):
         model.load_weights(model_weights, by_name=True)
@@ -125,23 +126,23 @@ def wide_whiteboard_detector():
     model.add(BatchNormalization(input_shape=(input_height, input_width,
                                               nb_cv_features),
                                  name='input_norm'))
-    model.add(Convolution2D(nb_filters, patch_size, patch_size,
-                            subsample=(patch_size, patch_size),
-                            name='patch_conv',
-                            activation=psin,
-                            init='glorot_uniform'))
+    model.add(Conv2D(nb_filters, (patch_size, patch_size),
+                     strides=(patch_size, patch_size),
+                     name='patch_conv',
+                     activation=psin,
+                     init='glorot_uniform'))
     model.add(Dropout(dropout_pb))
     model.add(BatchNormalization(name='hidden_norm'))
-    model.add(Convolution2D(nb_filters, agg_size, agg_size, subsample=(1, 1),
-                            name='aggregated_conv', border_mode='same',
-                            activation=pcos,
-                            init='glorot_uniform'))
+    model.add(Conv2D(nb_filters, (agg_size, agg_size), strides=(1, 1),
+                     name='aggregated_conv', padding='same',
+                     activation=pcos,
+                     init='glorot_uniform'))
     model.add(Dropout(dropout_pb))
     model.add(BatchNormalization(name='patch_norm'))
     # compute probability of corner for each patch
     # using aggregated feature maps.
-    model.add(Convolution2D(1, 1, 1, subsample=(1, 1), activation='sigmoid',
-                            name='sigmoid_conv'))
+    model.add(Conv2D(1, (1, 1), strides=(1, 1), activation='sigmoid',
+                     name='sigmoid_conv'))
     if os.path.exists(model_weights):
         model.load_weights(model_weights, by_name=True)
 
@@ -157,21 +158,21 @@ def residual_block(identifier, input_layer, dropout_pb, nb_filters, agg_size):
     normalized_input = BatchNormalization(name=norm_id)(input_layer)
     dropout_id = 'dropout_a_' + identifier
     dropout_a = Dropout(dropout_pb, name=dropout_id)(normalized_input)
-    agg_conv_a = Convolution2D(nb_filters, agg_size, agg_size,
-                               subsample=(1, 1),
+    agg_conv_a = Conv2D(nb_filters, (agg_size, agg_size),
+                               strides=(1, 1),
                                name='agg_conv_a_' + identifier,
-                               border_mode='same',
+                               padding='same',
                                activation=LeakyReLU())(dropout_a)
     agg_conv_a_norm = 'agg_conv_a_{}_norm'.format(identifier)
     a_norm = BatchNormalization(name=agg_conv_a_norm)(agg_conv_a)
     dropout_b = Dropout(dropout_pb, name='dropout_b_' + identifier)(a_norm)
-    agg_conv_b = Convolution2D(nb_filters, agg_size, agg_size,
-                               subsample=(1, 1),
+    agg_conv_b = Conv2D(nb_filters, (agg_size, agg_size),
+                               strides=(1, 1),
                                name='agg_conv_b_' + identifier,
-                               border_mode='same')(dropout_b)
+                               padding='same')(dropout_b)
 
-    residual_function = merge([agg_conv_b, normalized_input], mode='sum',
-                              name='residual_function_' + identifier)
+    residual_function = add([agg_conv_b, normalized_input],
+                            name='residual_function_' + identifier)
 
     residual_id = 'residual_nonlinearity_' + identifier
     residual_nonlinearity = Activation(LeakyReLU(),
@@ -195,8 +196,8 @@ def residual_detector_4_blocks():
     input_layer = Input(shape=(input_height, input_width, nb_cv_features),
                         name='input_layer')
     input_norm = BatchNormalization(name='input_norm')(input_layer)
-    downsample_conv = Convolution2D(nb_filters, patch_size, patch_size,
-                                    subsample=(patch_size, patch_size),
+    downsample_conv = Conv2D(nb_filters, (patch_size, patch_size),
+                                    strides=(patch_size, patch_size),
                                     name='downsample_conv',
                                     activation=LeakyReLU())(input_norm)
     block_1 = residual_block('1', downsample_conv, dropout_pb, nb_filters,
@@ -213,7 +214,7 @@ def residual_detector_4_blocks():
 
     # compute probability of corner for
     # each patch using aggregated feature maps.
-    output_layer = Convolution2D(1, 1, 1, subsample=(1, 1),
+    output_layer = Conv2D(1, (1, 1), strides=(1, 1),
                                  activation='sigmoid',
                                  name='sigmoid_conv')(final_dropout)
 
@@ -243,8 +244,8 @@ def residual_detector_6_blocks():
     input_layer = Input(shape=(input_height, input_width, nb_cv_features),
                         name='input_layer')
     input_norm = BatchNormalization(name='input_norm')(input_layer)
-    downsample_conv = Convolution2D(nb_filters, patch_size, patch_size,
-                                    subsample=(patch_size, patch_size),
+    downsample_conv = Conv2D(nb_filters, (patch_size, patch_size),
+                                    strides=(patch_size, patch_size),
                                     name='downsample_conv',
                                     activation=LeakyReLU())(input_norm)
     block_1 = residual_block('1', downsample_conv, dropout_pb, nb_filters,
@@ -265,7 +266,7 @@ def residual_detector_6_blocks():
 
     # compute probability of corner for
     # each patch using aggregated feature maps.
-    output_layer = Convolution2D(1, 1, 1, subsample=(1, 1),
+    output_layer = Conv2D(1, (1, 1), strides=(1, 1),
                                  activation='sigmoid',
                                  name='sigmoid_conv')(final_dropout)
 
@@ -321,9 +322,9 @@ def whiteboard_detector(input_image, convnet):
 
     # Need to merge present bit and coords into single vector
     # to use custom loss function on it
-    merged_whiteboard = merge([whiteboard_present,
-                               whiteboard_color, xs, ys], mode='concat',
-                              name='whiteboard')
+    merged_whiteboard = concatenate([whiteboard_present,
+                                     whiteboard_color, xs, ys], mode='concat',
+                                    name='whiteboard')
     return Model(input=input_image, output=merged_whiteboard)
 
 
